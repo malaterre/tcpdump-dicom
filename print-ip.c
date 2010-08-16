@@ -302,6 +302,334 @@ in_cksum(const u_short *addr, register u_int len, int csum)
 	return (answer);
 }
 
+#define DICOM
+#ifdef DICOM
+/*
+ * print a DICOM command PDV.
+ */
+static void
+print_dicom_command_pdv(const u_char *dp,long dlen,int indent)
+{
+	char msg[65];
+	char *indentstring;
+	switch (indent) {
+		case 0:		indentstring=""; break;
+		case 1:		indentstring="\t"; break;
+		case 2:		indentstring="\t\t"; break;
+		case 3:		indentstring="\t\t\t"; break;
+		default:	indentstring="\t\t\t\t"; break;
+	}
+
+	/* default_print_unaligned(dp,dlen); */
+	ascii_print(dp,dlen);
+
+	while (dlen > 0) {
+		unsigned short group;
+		unsigned short element;
+		unsigned long vl;
+
+		if (dlen < 8) {
+			if (dlen == 1)
+				(void)printf("\n--DICOM-- %sMessage PDV one byte of trailing padding",indentstring,dlen);
+			else
+				(void)printf("\n--DICOM-- %sMessage PDV too short (%lu left) - incomplete attribute",indentstring,dlen);
+			break;
+		}
+
+#define EXTRACT16_DICOM_LE(p,i)	(((unsigned short)p[i+1]<<8)+p[i])
+#define EXTRACT32_DICOM_LE(p,i)	(((((((unsigned long)p[i+3]<<8)+p[i+2])<<8)+p[i+1])<<8)+p[i])
+
+		group=EXTRACT16_DICOM_LE(dp,0);
+		element=EXTRACT16_DICOM_LE(dp,2);
+		vl=EXTRACT32_DICOM_LE(dp,4);
+
+		(void)printf("\n--DICOM-- %s(%04x,%04x) VL=%lu (0x%lx)\t",indentstring,group,element,vl,vl);
+
+		if (group != 0) {
+			(void)printf(" non-command attribute - giving up parsing message",indentstring);
+			break;
+		}
+		else {
+			switch (element) {
+				case 0x0000:	(void)printf(" Group Length");
+						if (vl == 4) (void)printf(" = %lu",EXTRACT32_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x0002:	(void)printf(" Affected SOP Class UID");
+						if (vl > 0 && vl <= 64) {
+							strncpy(msg,dp+8,vl);
+							msg[vl]=0;
+							(void)printf(" = <%s>",msg);
+						}
+						else (void)printf(" bad length");
+						break;
+				case 0x0003:	(void)printf(" Requested SOP Class UID");
+						if (vl > 0 && vl <= 64) {
+							strncpy(msg,dp+8,vl);
+							msg[vl]=0;
+							(void)printf(" = <%s>",msg);
+						}
+						else (void)printf(" bad length");
+						break;
+				case 0x0100:	(void)printf(" Command Field");
+						if (vl == 2) {
+							unsigned short cmd=EXTRACT16_DICOM_LE(dp,8);
+							(void)printf(" = 0x%04x",cmd);
+							if (cmd == 0x0fff)
+								(void)printf(" C-CANCEL-xxxx-RQ");
+							else {
+								switch(cmd & 0x7fff) {
+									case 0x0001:	(void)printf(" C-STORE"); break;
+									case 0x0010:	(void)printf(" C-GET"); break;
+									case 0x0020:	(void)printf(" C-FIND"); break;
+									case 0x0021:	(void)printf(" C-MOVE"); break;
+									case 0x0030:	(void)printf(" C-ECHO"); break;
+									case 0x0100:	(void)printf(" N-EVENT-REPORT"); break;
+									case 0x0110:	(void)printf(" N-GET"); break;
+									case 0x0120:	(void)printf(" N-SET"); break;
+									case 0x0130:	(void)printf(" N-ACTION"); break;
+									case 0x0140:	(void)printf(" N-CREATE"); break;
+									case 0x0150:	(void)printf(" N-DELETE"); break;
+								}
+								(void)printf("-%s",(cmd&0x8000) ? "RSP" : "RQ");
+							}
+						}
+						else (void)printf(" bad length");
+						break;
+				case 0x0110:	(void)printf(" Message ID");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x0120:	(void)printf(" Message ID Being Responded To");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x0600:	(void)printf(" Move Destination");
+						if (vl > 0 && vl <= 16) {
+							strncpy(msg,dp+8,vl);
+							msg[vl]=0;
+							(void)printf(" = <%s>",msg);
+						}
+						else (void)printf(" bad length");
+						break;
+				case 0x0700:	(void)printf(" Priority");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x0800:	(void)printf(" Data Set Type");
+						if (vl == 2) (void)printf(" = 0x%04x",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x0900:	(void)printf(" Status");
+						if (vl == 2) (void)printf(" = 0x%04x",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x1000:	(void)printf(" Affected SOP Instance UID");
+						if (vl > 0 && vl <= 64) {
+							strncpy(msg,dp+8,vl);
+							msg[vl]=0;
+							(void)printf(" = <%s>",msg);
+						}
+						else (void)printf(" bad length");
+						break;
+				case 0x1001:	(void)printf(" Requested SOP Instance UID");
+						if (vl > 0 && vl <= 64) {
+							strncpy(msg,dp+8,vl);
+							msg[vl]=0;
+							(void)printf(" = <%s>",msg);
+						}
+						else (void)printf(" bad length");
+						break;
+				case 0x1002:	(void)printf(" Event Type ID");
+						if (vl == 2) (void)printf(" = 0x%04x",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x1005:	(void)printf(" Attribute Identifier List");
+						break;
+				case 0x1020:	(void)printf(" Number Of Remaining Suboperations");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x1021:	(void)printf(" Number Of Completed Suboperations");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x1022:	(void)printf(" Number Of Failed Suboperations");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x1023:	(void)printf(" Number Of Warning Suboperations");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				case 0x1030:	(void)printf(" Move Originator Application Entity Title");
+						if (vl > 0 && vl <= 16) {
+							strncpy(msg,dp+8,vl);
+							msg[vl]=0;
+							(void)printf(" = <%s>",msg);
+						}
+						else (void)printf(" bad length");
+						break;
+				case 0x1031:	(void)printf(" Move Originator Message ID");
+						if (vl == 2) (void)printf(" = %u",EXTRACT16_DICOM_LE(dp,8));
+						else (void)printf(" bad length");
+						break;
+				default:
+						break;
+			}
+		}
+
+		dlen-=(vl+8);
+		dp+=(vl+8);
+	}
+}
+#endif
+
+#ifdef DICOM
+/*
+ * print a DICOM associate request/response item list.
+ */
+static void
+print_dicom_associate_pdu(const u_char *dp,long dlen,int indent)
+{
+	char msg[65];
+	int msglen;
+	char *indentstring;
+	switch (indent) {
+		case 0:		indentstring=""; break;
+		case 1:		indentstring="\t"; break;
+		case 2:		indentstring="\t\t"; break;
+		case 3:		indentstring="\t\t\t"; break;
+		default:	indentstring="\t\t\t\t"; break;
+	}
+
+	while (dlen > 0) {
+		unsigned short ilen;
+		if (dlen < 4) {
+			(void)printf("\n--DICOM-- %sItem too short - no length",indentstring);
+			break;
+		}
+		else {
+			ilen=EXTRACT_16BITS(dp+2);
+		}
+
+		(void)printf("\n--DICOM-- %sItem %02x (length %u)",indentstring,(unsigned short)*dp,ilen);
+
+		if (ilen+4 > dlen) {
+			(void)printf("\n--DICOM-- %sItem too long - greater than what is left in PDU",indentstring);
+			break;
+		}
+
+		switch (*dp) {		/* Item Type */
+			case 0x10:	(void)printf(" Application Context");
+					msglen=ilen > 64 ? 64 : ilen;
+					if (ilen) {
+						strncpy(msg,dp+4,msglen);
+						msg[msglen]=0;
+						(void)printf("\n--DICOM-- %s\tApplication Context Name=%s",indentstring,msg);
+					}
+					break;
+			case 0x20:	(void)printf(" Presentation Context (offered)");
+					(void)printf("\n--DICOM-- %s\tPresentation Context ID=%u",indentstring,(unsigned short)dp[4]);
+					if (!(dp[4] & 0x01))
+						(void)printf("\n--DICOM-- %sPresentation Context ID should not be even :(",indentstring);
+					if (ilen > 4)
+						print_dicom_associate_pdu(dp+8,ilen-4,indent+1);
+					break;
+			case 0x21:	(void)printf(" Presentation Context (accepted)");
+					(void)printf("\n--DICOM-- %s\tPresentation Context ID=%u",indentstring,(unsigned short)dp[4]);
+					if (!(dp[4] & 0x01))
+						(void)printf("\n--DICOM-- %sPresentation Context ID should not be even :(",indentstring);
+					(void)printf("\n--DICOM-- %s\tResult/Reason=%u",indentstring,(unsigned short)*(dp+6));
+					switch(*(dp+6)) {
+						case 0:		(void)printf(" (acceptance)"); break;
+						case 1:		(void)printf(" (user rejection)"); break;
+						case 2:		(void)printf(" (no reason - provider rejection)"); break;
+						case 3:		(void)printf(" (Abstract Syntax not supported - provider rejection)"); break;
+						case 4:		(void)printf(" (Transfer Syntaxes not supported - provider rejection)"); break;
+						default:	(void)printf(" (unrecognized)"); break;
+					}
+					if (ilen > 4)
+						print_dicom_associate_pdu(dp+8,ilen-4,indent+1);
+					break;
+			case 0x30:	(void)printf(" Abstract Syntax");
+					msglen=ilen > 64 ? 64 : ilen;
+					if (ilen) {
+						strncpy(msg,dp+4,msglen);
+						msg[msglen]=0;
+						(void)printf("\n--DICOM-- %s\tAbstract Syntax Name=%s",indentstring,msg);
+					}
+					break;
+			case 0x40:	(void)printf(" Transfer Syntax");
+					msglen=ilen > 64 ? 64 : ilen;
+					if (ilen) {
+						strncpy(msg,dp+4,msglen);
+						msg[msglen]=0;
+						(void)printf("\n--DICOM-- %s\tTransfer Syntax Name=%s",indentstring,msg);
+					}
+					break;
+			case 0x50:	(void)printf(" User");
+					if (ilen > 4)
+						print_dicom_associate_pdu(dp+4,ilen,indent+1);
+					break;
+			case 0x51:	(void)printf(" Maximum Length");
+					if (ilen != 4)
+						(void)printf("\n--DICOM-- %sbad length :(",indentstring);
+					else
+						(void)printf("\n--DICOM-- %s\tMaximum Length Received=%lu",indentstring,EXTRACT_32BITS(dp+4));
+					break;
+			case 0x52:	(void)printf(" Implementation Class UID");
+					msglen=ilen > 64 ? 64 : ilen;
+					if (ilen) {
+						strncpy(msg,dp+4,msglen);
+						msg[msglen]=0;
+						(void)printf("\n--DICOM-- %s\tImplementation Class UID=%s",indentstring,msg);
+					}
+					break;
+			case 0x53:	(void)printf(" Asynchronous Operations Window");
+					if (ilen != 4)
+						(void)printf("\n--DICOM-- %sbad length :(",indentstring);
+					else {
+						(void)printf("\n--DICOM-- %s\tMaximum Number of Operations Invoked=%u",indentstring,EXTRACT_16BITS(dp+4));
+						(void)printf("\n--DICOM-- %s\tMaximum Number of Operations Performed=%u",indentstring,EXTRACT_16BITS(dp+6));
+					}
+					break;
+			case 0x54:	(void)printf(" SCP/SCU Role Selection");
+					if (ilen < 8)
+						(void)printf("\n--DICOM-- %sbad length :(",indentstring);
+					else {
+						u_char role;
+						unsigned short uidlen=EXTRACT_16BITS(dp+4);
+						(void)printf("\n--DICOM-- %s\tUID Length=%u",indentstring,uidlen);
+						msglen=uidlen > 64 ? 64 : uidlen;
+						if (uidlen) {
+							strncpy(msg,dp+6,msglen);
+							msg[msglen]=0;
+							(void)printf("\n--DICOM-- %s\tSOP Class UID=%s",indentstring,msg);
+						}
+						role=EXTRACT_16BITS(dp+6+uidlen);
+						(void)printf("\n--DICOM-- %s\tSCU Role=%u (%s)",indentstring,role,role ? "accept" : "reject");
+						role=EXTRACT_16BITS(dp+6+uidlen+1);
+						(void)printf("\n--DICOM-- %s\tSCP Role=%u (%s)",indentstring,role,role ? "accept" : "reject");
+					}
+					break;
+			case 0x55:	(void)printf(" Implementation Version Name");
+					msglen=ilen > 16 ? 16 : ilen;
+					if (ilen) {
+						strncpy(msg,dp+4,msglen);
+						msg[msglen]=0;
+						(void)printf("\n--DICOM-- %s\tImplementation Version Name=%s",indentstring,msg);
+					}
+					break;
+			default:	(void)printf(" unrecognized");
+					break;
+		}
+		dp+=(ilen+4);
+		dlen-=(ilen+4);
+	}
+}
+#endif
+
 /*
  * Given the host-byte-order value of the checksum field in a packet
  * header, and the network-byte-order computed checksum of the data
@@ -703,6 +1031,159 @@ ip_print(netdissect_options *ndo,
 		    (void)printf(" ip-proto-%d", ipds->ip->ip_p);
 	    } 
 	}
+#ifdef DICOM
+	if ((ipds->off & 0x1fff) == 0 && ipds->ip->ip_p == IPPROTO_TCP) {
+		unsigned short thlen;
+		unsigned short tlen;
+		const u_char *dp;
+		ipds->cp = (const u_char *)ipds->ip + hlen;
+		thlen=((ipds->cp[12] >> 4) & 0xf)*4;
+		tlen=ipds->len-thlen;
+		/* (void)printf("\n--DICOM-- TCP Header Length=%d",thlen); */
+		/* (void)printf("\n--DICOM-- TCP Data Length=%d",tlen); */
+		if (tlen) {
+			dp = (const u_char *)ipds->cp + thlen;
+			/* (void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]); */
+			switch (dp[0]) {
+				case 1:		{
+							/* Try to sure it is really a ASSOCIATE-RQ (and not a later packet
+							   in a P-DATA-TF PDU) by sanity check on lengths */
+							if (EXTRACT_32BITS(dp+2) + 6 >= tlen	/* not == because may continue in next packet :( */
+							 && (unsigned long)(EXTRACT_32BITS(dp+2) + 6) <= 10000	/* arbitrary, but for sanity */
+							 && EXTRACT_32BITS(dp+2) >= 68 ) {
+								char msg[17];
+								(void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+								(void)printf(" ASSOCIATE-RQ");
+								(void)printf("\n--DICOM-- \tPDU Length=%lu",EXTRACT_32BITS(dp+2));
+								(void)printf("\n--DICOM-- \tProtocol Version=%u",EXTRACT_16BITS(dp+6));
+								strncpy(msg,dp+10,16); msg[16]=0;
+								(void)printf("\n--DICOM-- \tCalled  AE Title=%16s",msg);
+								strncpy(msg,dp+26,16); msg[16]=0;
+								(void)printf("\n--DICOM-- \tCalling AE Title=%16s",msg);
+								print_dicom_associate_pdu(dp+74,tlen-74,1);
+							}
+						}
+						break;
+				case 2:		{
+							/* Try to sure it is really a ASSOCIATE-AC (and not a later packet
+							   in a P-DATA-TF PDU) by sanity check on lengths */
+							if (EXTRACT_32BITS(dp+2) + 6 >= tlen	/* not == because may continue in next packet :( */
+							 && (unsigned long)(EXTRACT_32BITS(dp+2) + 6) <= 10000	/* arbitrary, but for sanity */
+							 && EXTRACT_32BITS(dp+2) >= 68 ) {
+								(void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+								(void)printf(" ASSOCIATE-AC");
+								(void)printf("\n--DICOM-- \tPDU Length=%lu",EXTRACT_32BITS(dp+2));
+								(void)printf("\n--DICOM-- \tProtocol Version=%u",EXTRACT_16BITS(dp+6));
+								print_dicom_associate_pdu(dp+74,tlen-74,1);
+							}
+						}
+						break;
+				case 3:		{
+							/* Try to sure it is really a ASSOCIATE-RJ (and not a later packet
+							   in a P-DATA-TF PDU) by sanity check on lengths */
+							if (EXTRACT_32BITS(dp+2) + 6 == tlen
+							 && EXTRACT_32BITS(dp+2) == 4 ) {
+								(void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+								(void)printf(" ASSOCIATE-RJ");
+								(void)printf("\n--DICOM-- \tPDU Length=%lu",EXTRACT_32BITS(dp+2));
+								(void)printf("\n--DICOM-- \tResult=%u (%s)",(u_char)*(dp+7),
+									(*(dp+7) == 1 ? "permanent" :
+									(*(dp+7) == 2 ? "transient" : "unrecognized" ) ) );
+								(void)printf("\n--DICOM-- \tSource of rejection=%u",(u_char)*(dp+8));
+								switch (*(dp+8)) {
+									case 0:		(void)printf(" (user)");
+											(void)printf("\n--DICOM-- \tReason=%u",(u_char)*(dp+9));
+											switch(*(dp+9)) {
+												case 1:		(void)printf(" (no reason given)"); break;
+												case 2:		(void)printf(" (ACN unsupported)"); break;
+												case 3:		(void)printf(" (Calling AET unrecognized)"); break;
+												case 7:		(void)printf(" (Called AET unrecognized)"); break;
+												default:	(void)printf(" (reserved or unrecognized)"); break;
+											}
+											break;
+									case 1:		(void)printf(" (provider - ACSE)");
+											(void)printf("\n--DICOM-- \tReason=%u",(u_char)*(dp+9));
+											switch(*(dp+9)) {
+												case 1:		(void)printf(" (no reason given)"); break;
+												case 2:		(void)printf(" (protocol version unsupported)"); break;
+												default:	(void)printf(" (reserved or unrecognized)"); break;
+											}
+											break;
+									case 2:		(void)printf(" (provider - Presentation)");
+											(void)printf("\n--DICOM-- \tReason=%u",(u_char)*(dp+9));
+											switch(*(dp+9)) {
+												case 1:		(void)printf(" (temporary congestion)"); break;
+												case 2:		(void)printf(" (local limit exceeded)"); break;
+												default:	(void)printf(" (reserved or unrecognized)"); break;
+											}
+											break;
+									default:	(void)printf(" (unrecognized)");
+											(void)printf("\n--DICOM-- \tReason=%u",(u_char)*(dp+9));
+											break;
+								}
+							}
+						}
+						break;
+				case 4:		{
+							/* Try to sure it is really a first P-DATA-TF (and not a later packet
+							   in a P-DATA-TF PDU) by sanity check on lengths */
+							if (EXTRACT_32BITS(dp+2) + 6 >= tlen	/* not == because may continue in next packet :( */
+							 && EXTRACT_32BITS(dp+6) + 4 <= EXTRACT_32BITS(dp+2) ) {
+								(void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+								(void)printf(" P-DATA-TF");
+								(void)printf("\n--DICOM-- \tPDU Length=%lu",EXTRACT_32BITS(dp+2));
+								(void)printf("\n--DICOM-- \tFirst PDV Item Length=%lu",EXTRACT_32BITS(dp+6));
+								(void)printf("\n--DICOM-- \tFirst PDV Pres Ctx ID=%u",(u_char)*(dp+10));
+								(void)printf("\n--DICOM-- \tFirst PDV Message Control Header=%02x (%s,%s)",
+									(u_char)*(dp+11),
+									(*(dp+11) & 0x01) ? "Command" : "Data",
+									(*(dp+11) & 0x02) ? "Last" : "Not Last");
+								if (*(dp+11) & 0x01) print_dicom_command_pdv(dp+12,min(EXTRACT_32BITS(dp+6)-2,tlen-12),1);
+							}
+						}
+						break;
+				case 5:		{
+							/* Try to sure it is really a A-RELEASE-RQ (and not a later packet
+							   in a P-DATA-TF PDU) by sanity check on lengths */
+							if (EXTRACT_32BITS(dp+2) + 6 == tlen
+							 && EXTRACT_32BITS(dp+2) == 4 ) {
+								(void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+								(void)printf(" A-RELEASE-RQ");
+								(void)printf("\n--DICOM-- \tPDU Length=%lu",EXTRACT_32BITS(dp+2));
+							}
+						}
+						break;
+				case 6:		{
+							/* Try to sure it is really a A-RELEASE-RP (and not a later packet
+							   in a P-DATA-TF PDU) by sanity check on lengths */
+							if (EXTRACT_32BITS(dp+2) + 6 == tlen
+							 && EXTRACT_32BITS(dp+2) == 4 ) {
+								(void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+								(void)printf(" A-RELEASE-RP");
+								(void)printf("\n--DICOM-- \tPDU Length=%lu",EXTRACT_32BITS(dp+2));
+							}
+						}
+						break;
+				case 7:		{
+							/* Try to sure it is really a A-ABORT (and not a later packet
+							   in a P-DATA-TF PDU) by sanity check on lengths */
+							if (EXTRACT_32BITS(dp+2) + 6 == tlen
+							 && EXTRACT_32BITS(dp+2) == 4 ) {
+								(void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+								(void)printf(" A-ABORT");
+								(void)printf("\n--DICOM-- \tPDU Length=%lu",EXTRACT_32BITS(dp+2));
+								(void)printf("\n--DICOM-- \tSource of abort=%u (%s)",(u_char)*(dp+8),
+									(*(dp+8) == 0 ? "user" :
+									(*(dp+8) == 1 ? "rsvd" :
+									(*(dp+8) == 2 ? "provider" : "unrecognized" ) ) ) );
+							}
+						}
+						break;
+				default:	break;
+			}
+		}
+	}
+#endif
 }
 
 void
