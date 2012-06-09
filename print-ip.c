@@ -475,6 +475,7 @@ print_dicom_command_pdv(const u_char *dp,long dlen,int indent)
 						else (void)printf(" bad length");
 						break;
 				default:
+						(void)printf(" CRAP: %u",element);
 						break;
 			}
 		}
@@ -1045,6 +1046,16 @@ ip_print(netdissect_options *ndo,
 			dp = (const u_char *)ipds->cp + thlen;
 			/* (void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]); */
 			switch (dp[0]) {
+				case 0:		{
+			 (void)printf("\n--DICOM-- PDU Type=0x%02x",dp[0]);
+          (void)printf("\n--DICOM-- TCP Header Length=%d",thlen);
+          (void)printf("\n--DICOM-- TCP Data Length=%d",tlen);
+            //FILE *out = fopen( "/tmp/d.dcm", "wb");
+            //fwrite( dp, 1, tlen, out );
+						//print_dicom_associate_pdu(dp,tlen,1);
+            print_dicom_command_pdv(dp,tlen,1);
+						}
+						break;
 				case 1:		{
 							/* Try to sure it is really a ASSOCIATE-RQ (and not a later packet
 							   in a P-DATA-TF PDU) by sanity check on lengths */
@@ -1139,6 +1150,7 @@ ip_print(netdissect_options *ndo,
 									(*(dp+11) & 0x01) ? "Command" : "Data",
 									(*(dp+11) & 0x02) ? "Last" : "Not Last");
 								if (*(dp+11) & 0x01) print_dicom_command_pdv(dp+12,min(EXTRACT_32BITS(dp+6)-2,tlen-12),1);
+                else printf("\nTOO BAD 0x%x", *(dp+11));
 							}
 						}
 						break;
